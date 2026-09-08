@@ -1,1 +1,2 @@
-*.rhm linguist-language=Rhombus
+*.rhm* linguist-language=Racket
+
