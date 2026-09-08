@@ -1,0 +1,8 @@
+#lang shplait
+
+type Exp
+| intE(n :: Int)
+| plusE(l :: Exp,
+        r :: Exp)
+| multE(l :: Exp,
+        r :: Exp)
