@@ -1,0 +1,249 @@
+#lang shplait
+
+module test:
+  check: parse('1')
+         ~is intE(1)
+  check: parse('x')
+         ~is idE(#'x)
+  check: parse('1 + 2')
+         ~is plusE(intE(1), intE(2))
+  check: parse('1 * 2')
+         ~is multE(intE(1), intE(2))
+  check: parse('1 + 2 * 4')
+         ~is plusE(intE(1), multE(intE(2), intE(4)))
+  check: parse('(1 + 2) * 4')
+         ~is multE(plusE(intE(1), intE(2)), intE(4))
+
+  check: parse('double(9)')
+         ~is appE(#'double, intE(9))
+  /*
+  check: parse('abs(-2)')
+         ~is absE(intE(-2))
+  check: parse('abs(2)')
+         ~is absE(intE(2))
+  */
+  check: parse('2 / 2')
+         ~is divE(intE(2), intE(2))
+  check: parse('3 + 2 / 2')
+         ~is plusE(intE(3), divE(intE(2),  intE(2)))
+  /*
+  check: parse('sum()')
+         ~is sumE([])
+  check: parse('sum(1, 2, 4, 5)')
+         ~is sumE(cons(intE(1), cons(intE(2), cons(intE(4), cons(intE(5), [])))))
+  */
+  check: parse('1 2')
+         ~raises "invalid input"
+
+
+  check: parse_fundef('fun double(x): x + x')
+         ~is fd(#'double, #'x, plusE(idE(#'x), idE(#'x)))
+  check: parse_fundef('fun f(): 1')
+         ~raises "invalid input"
+         
+  def double_def = parse_fundef('fun double(x): x + x')
+  def quadruple_def =  parse_fundef('fun quadruple(x): double(double(x))')
+
+  check: get_fundef(#'double, [double_def])
+         ~is double_def
+  check: get_fundef(#'double, [double_def, quadruple_def])
+         ~is double_def
+  check: get_fundef(#'quadruple, [double_def, quadruple_def])
+         ~is quadruple_def
+  check: get_fundef(#'two_sum, [double_def, quadruple_def])
+         ~raises "undefined function"
+  check: get_fundef(#'double, [])
+         ~raises "undefined function"
+  
+         
+  check: interp(intE(3), [])
+         ~is 3
+  check: interp(plusE(intE(3), intE(2)), [])
+         ~is 5
+  check: interp(multE(intE(3), intE(2)), [])
+         ~is 6
+  check: interp(plusE(intE(3), multE(intE(2), intE(4))), [])
+         ~is 11
+  /* check: interp(absE(plusE(intE(1), intE(-4))), [])
+         ~is 3
+  check: interp(absE(intE(2)), [])
+         ~is 2
+  check: interp(multE(plusE(absE(intE(-2)), intE(2)), intE(-1)), [])
+         ~is -4
+  */
+  check: interp(divE(intE(2), intE(2)), [])
+         ~is 1
+  check: interp(divE(intE(2), intE(1)), [])
+         ~is 2
+  check: interp(plusE(intE(3), divE(intE(2),  intE(2))), [])
+         ~is 4
+  /*
+  check: interp(sumE([]), [])
+         ~is 0
+  check: interp(sumE(cons(intE(1), cons(intE(2), cons(intE(4), cons(intE(5), []))))), [])
+         ~is 12
+  */
+  
+  /*
+         
+  check: abs(2)
+         ~is 2
+  check: abs(-2)
+         ~is 2
+  check: abs(0)
+         ~is 0
+  */
+
+
+type Exp
+| intE(n :: Int)
+| idE(s :: Symbol)
+| plusE(l :: Exp,
+        r :: Exp)
+| multE(l :: Exp,
+        r :: Exp)
+| divE(l :: Exp,
+       r :: Exp)
+| appE(s :: Symbol,
+       arg :: Exp)
+| absE(e :: Exp)
+| letE(n :: Symbol,
+       rhs :: Exp,
+       body :: Exp)
+
+type FunDef
+| fd(name :: Symbol,
+     arg :: Symbol,
+     body :: Exp)
+
+fun interp(a :: Exp, defs :: Listof(FunDef)) :: Int:
+  match a
+  | intE(n): n
+  | idE(s): error(#'interp, "free variable " +& s)
+  | plusE(l, r): interp(l, defs) + interp(r, defs)
+  | multE(l, r): interp(l, defs) * interp(r, defs)
+  | divE(l, r): interp(l, defs) / interp(r, defs)
+  | appE(s, arg):
+      block:
+        def d = get_fundef(s, defs)
+        interp(subst(intE(interp(arg, defs)),
+                     fd.arg(d),
+                     fd.body(d)), defs)
+  | absE(e): abs(interp(e, defs))
+  | letE(n, r, body): ....
+
+module test:
+  check: interp(parse('x'), [])
+         ~raises "free variable"
+  check: interp(parse('2'), [])
+         ~is 2
+  check: interp(parse('1 + 2'), [])
+         ~is 3
+  check: interp(parse('2 * 3'), [])
+         ~is 6
+  check: interp(parse('(2 * 3) + (5 + 8)'), [])
+         ~is 19
+  check: interp(parse('double(4 + 4)'), [double_def, quadruple_def])
+         ~is 16
+  check: interp(parse('quadruple(8)'), [double_def, quadruple_def])
+         ~is 32
+  check: interp(parse('quadruple(abs(-8) + 2)'), [double_def, quadruple_def])
+         ~is 40
+  check: interp(parse('quadruple(abs(2) * 5)'), [double_def, quadruple_def])
+         ~is 40
+  check: interp(parse('abs(double(-12))'), [double_def, quadruple_def])
+         ~is 24
+  check: interp(parse('abs(x)'), [])
+         ~raises "free variable"
+                
+                
+fun parse(s :: Syntax) :: Exp:
+  cond
+  | syntax_is_integer(s): intE(syntax_to_integer(s))
+  | syntax_is_symbol(s): idE(syntax_to_symbol(s))
+  | ~else:
+      match s
+      | 'let $name = $rhs: $body': letE(syntax_to_symbol(name),
+                                        parse(rhs),
+                                        parse(body))
+      | '$l + $r': plusE(parse(l),
+                         parse(r))
+      | '$l * $r':  multE(parse(l),
+                          parse(r))
+      | '$l / $r': divE(parse(l),
+                        parse(r))
+      | 'abs($e)': absE(parse(e))
+      | '$sym($arg)': appE(syntax_to_symbol(sym), parse(arg))
+      | '($e)': parse(e)
+      | ~else:
+          error(#'parse, "invalid input: " +& s)
+
+module test:
+  check: parse('abs(10)')
+         ~is absE(intE(10))
+  check: parse('abs(10 + 2)')
+         ~is absE(plusE(intE(10), intE(2)))
+  check: parse('3 * abs(10 + 2)')
+         ~is multE(intE(3), absE(plusE(intE(10), intE(2))))
+  check: parse('double(abs(-4) / 2)')
+         ~is appE(#'double, divE(absE(intE(-4)), intE(2)))
+
+fun parse_fundef(s :: Syntax) :: FunDef:
+  match s
+  | 'fun $name($arg): $body': fd(syntax_to_symbol(name), syntax_to_symbol(arg), parse(body))
+  | ~else:
+      error(#'parse_fundef, "invalid input" +& s)
+
+fun get_fundef(s :: Symbol, defs :: Listof(FunDef)) :: FunDef:
+  match defs
+  | []: error(#'get_fundef, "undefined function " +& s)
+  | cons(df, rst_defs): if fd.name(df) == s
+                        | df
+                        | get_fundef(s, rst_defs)
+
+fun subst(what :: Exp, for :: Symbol, in :: Exp) :: Exp:
+  match in
+  | intE(n): in
+  | idE(s): if for == s
+            | what
+            | in
+  | plusE(l, r): plusE(subst(what, for, l), subst(what, for, r))
+  | multE(l, r): multE(subst(what, for, l), subst(what, for, r))
+  | divE(l, r): divE(subst(what, for, l), subst(what, for, r))
+  | appE(s, arg): appE(s, subst(what, for, arg))
+  | absE(e): absE(subst(what, for, e))
+  | letE(n, rhs, body): letE(n,
+                             subst(what, for, rhs),
+                             if n == for
+                             | body
+                             | subst(what, for, body))
+
+module test:
+  check: subst(intE(8), #'x, intE(9))
+         ~is intE(9)
+  check: subst(intE(8), #'x, idE(#'x))
+         ~is intE(8)
+  check: subst(intE(8), #'x, idE(#'y))
+         ~is idE(#'y)
+  check: subst(intE(8), #'x, plusE(idE(#'x), idE(#'y)))
+         ~is plusE(intE(8), idE(#'y))
+  check: subst(intE(8), #'x, multE(idE(#'x), idE(#'y)))
+         ~is multE(intE(8), idE(#'y))
+  check: subst(intE(8), #'x, appE(#'double, idE(#'x)))
+         ~is appE(#'double, intE(8))
+  check: subst(parse('9'), #'x, parse('x / y'))
+         ~is divE(intE(9), idE(#'y))
+  check: subst(parse('7'), #'x, parse('abs(-8)'))
+         ~is absE(intE(-8))
+  check: subst(parse('8'), #'x, parse('abs(x)'))
+         ~is absE(intE(8))
+  check: subst(parse('8'), #'x, parse('abs(y)'))
+         ~is absE(idE(#'y))
+  check: subst(parse('8'), #'x, parse('double(abs(x))'))
+         ~is appE(#'double, absE(intE(8)))
+
+  
+fun abs(n :: Int) :: Int:
+  cond
+  | n < 0: -n
+  | ~else: n
