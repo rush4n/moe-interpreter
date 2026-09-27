@@ -23,7 +23,14 @@ check: sum(node(leaf(-5), 6, leaf(7)))
 
 /* PART 2 */
 fun absolute(tree :: Tree) :: Tree:
-  ....
+  match tree
+  | leaf(v): leaf(absV(v))
+  | node(l, v, r): node(absolute(l), absV(v), absolute(r))
+
+fun absV(v :: Int) :: Int:
+  if v < 0
+  | -1 * v
+  | v
 
 check: absolute(node(leaf(5), -6, leaf(-7)))
        ~is node(leaf(5), 6, leaf(7))
@@ -33,3 +40,71 @@ check: absolute(node(leaf(0), 0, leaf(0)))
        ~is node(leaf(0), 0, leaf(0))
 check: absolute(node(leaf(-3), -2, leaf(-4)))
        ~is node(leaf(3), 2, leaf(4))
+
+/* PART 3 */
+fun contains(tree :: Tree, k :: Int) :: Boolean:
+  match tree
+  | leaf(v): v == k
+  | node(l, v, r): contains(l, k) || v == k || contains(r, k)
+
+check: contains(node(leaf(5), 6, leaf(7)), 5)
+       ~is #true
+check: contains(node(leaf(3), 6, leaf(7)), 5)
+       ~is #false
+check: contains(leaf(5), 5)
+       ~is #true
+check: contains(node(leaf(-5), 6, leaf(7)), 5)
+       ~is #false
+check: contains(absolute(node(leaf(-5), 6, leaf(7))), 5)
+       ~is #true
+
+/* PART 4 */
+fun has_summary_leaves(tree :: Tree) :: Boolean:
+  has_summary_plus_leaves(tree, 0)
+
+fun has_summary_plus_leaves(tree :: Tree, total :: Int) :: Boolean:
+  match tree
+  | leaf(v): v == total
+  | node(l, v, r): has_summary_plus_leaves(l, total + v) && has_summary_plus_leaves(r, total + v)
+
+check: has_summary_leaves(node(leaf(5), 5, node(leaf(3), -2, leaf(3))))
+       ~is #true
+check: has_summary_leaves(node(node(leaf(6), 1, leaf(8)), 5, leaf(5)))
+       ~is #false
+check: has_summary_leaves(leaf(10))
+       ~is #false
+check: has_summary_leaves(leaf(0))
+       ~is #true
+
+/* PART 5 */
+fun all_summary_trees(lot :: Listof(Tree)) :: Boolean:
+  match lot
+  | []: #true
+  | cons(tree, rst_trees): has_summary_leaves(tree) && all_summary_trees(rst_trees)
+
+check: all_summary_trees(cons(leaf(0),
+                              []))
+       ~is #true
+
+check: all_summary_trees(cons(leaf(6),
+                              []))
+       ~is #false
+
+check: all_summary_trees(cons(node(leaf(1), 1, leaf(1)),
+                              []))
+       ~is #true
+
+check: all_summary_trees(cons(node(leaf(6),
+                                   6,
+                                   node(leaf(7), 1, leaf(7))),
+                              cons(node(leaf(0), 0, leaf(0)),
+                                   [])))
+       ~is #true
+
+check: all_summary_trees(cons(node(leaf(6), 1, leaf(6)),
+                              cons(node(leaf(0), 0, leaf(0)),
+                                   [])))
+       ~is #false
+
+/* PART 6 (OPTIONAL) */
+/* TO BE IMPLEMENTED */
