@@ -103,5 +103,22 @@ check: feed_fish([])
 check: feed_fish([2, 7, 11])
        ~is [3, 8, 12]
 
+type Plant
+| leaf()
+| stem(p :: Plant)
+| branch(l :: Plant,
+         r :: Plant)
+
+fun plant_forks(p :: Plant) :: Int:
+  match p
+  | leaf(): 0
+  | stem(p): plant_forks(p)
+  | branch(l, r): 1 + plant_forks(l) + plant_forks(r)
 
 
+check: plant_forks(stem(branch(leaf(), branch(leaf(), leaf()))))
+       ~is 2
+check: plant_forks(stem(leaf()))
+       ~is 0
+check: plant_forks(branch(branch(branch(leaf(), leaf()), branch(leaf(), leaf())), branch(branch(leaf(), leaf()), branch(leaf(), leaf()))))
+       ~is 7

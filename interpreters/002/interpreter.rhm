@@ -1,0 +1,81 @@
+#lang shplait
+
+type Exp
+| intE(n :: Int)
+| idE(s :: Symbol)
+| plusE(l :: Exp,
+        r :: Exp)
+| multE(l :: Exp,
+        r :: Exp)
+| appE(s :: Symbol,
+       arg :: Exp)
+
+type FunDef
+| fd(name :: Symbol,
+     arg :: Symbol,
+     body :: Exp)
+
+fun parse(s :: Syntax) :: Exp:
+  cond
+  | syntax_is_integer(s): intE(syntax_to_integer(s))
+  | syntax_is_symbol(s): idE(syntax_to_symbol(s))
+  | ~else: match s
+           | '$left + $right': plusE(parse(left), parse(right))
+           | '$left * $right': multE(parse(left), parse(right))
+           | '$sym($arg)': appE(syntax_to_symbol(sym),
+                                parse(arg))
+           | '($e)': parse(e)
+           | ~else: error(#'interp, "invalid input " +& s)
+
+fun parse_fundef(s :: Syntax) :: FunDef:
+  match s
+  | 'fun $name($arg): $body': fd(syntax_to_symbol(name),
+                                 syntax_to_symbol(arg),
+                                 parse(body))
+  | ~else: error(#'parse, "invalid function definition " +& s)
+
+check: parse_fundef('fun double(x): x + x')
+       ~is fd(#'double, #'x, plusE(idE(#'x), idE(#'x)))
+check: parse_fundef('fun quadruple(x): double(double(x))')
+       ~is fd(#'quadruple, #'x, appE(#'double, appE(#'double, idE(#'x))))
+check: parse_fundef('fun plus_two(x): x + 2')
+       ~is fd(#'plus_two, #'x, plusE(idE(#'x), intE(2)))
+check: parse_fundef('fun (x): x + 2')
+       ~raises "invalid function definition"
+
+
+fun interp(a :: Exp) :: Int:
+  match a
+  | intE(n): n
+  | idE(s): error(#'interp, "free variable " +& s)
+  | plusE(l, r): interp(l) + interp(r)
+  | multE(l, r): interp(l) * interp(r)
+  | appE(fn, arg): ....
+
+
+
+/* 2 */
+check: interp(intE(2))
+       ~is 2
+/* 2 + 3 = 5 */
+check: interp(plusE(intE(2), intE(3)))
+       ~is 5
+/* 2 * 3 = 6 */
+check: interp(multE(intE(2), intE(3)))
+       ~is 6
+/* 1 + 2 * 3 = 7 */
+check: interp(plusE(intE(1), multE(intE(2), intE(3))))
+       ~is 7
+
+check: parse('1')
+       ~is intE(1)
+check: parse('2 + 3')
+       ~is plusE(intE(2), intE(3))
+check: parse('2 * 3')
+       ~is multE(intE(2), intE(3))
+check: parse('1 + 2 * 3')
+       ~is plusE(intE(1), multE(intE(2), intE(3)))
+check: parse('(1 + 2) * 3')
+       ~is multE(plusE(intE(1), intE(2)), intE(3))
+check: parse('1 2')
+       ~raises "invalid input"

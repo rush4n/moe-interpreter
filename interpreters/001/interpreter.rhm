@@ -1,0 +1,50 @@
+#lang shplait
+
+type Exp
+| intE(n :: Int)
+| plusE(l :: Exp,
+        r :: Exp)
+| multE(l :: Exp,
+        r :: Exp)
+
+fun parse(s :: Syntax) :: Exp:
+  cond
+  | syntax_is_integer(s): intE(syntax_to_integer(s))
+  | ~else: match s
+           | '$left + $right': plusE(parse(left), parse(right))
+           | '$left * $right': multE(parse(left), parse(right))
+           | '($e)': parse(e)
+           | ~else: error(#'interp, "invalid input " +& s)
+
+fun interp(a :: Exp) :: Int:
+  match a
+  | intE(n): n
+  | plusE(l, r): interp(l) + interp(r)
+  | multE(l, r): interp(l) * interp(r)
+
+/* 2 */
+check: interp(intE(2))
+       ~is 2
+/* 2 + 3 = 5 */
+check: interp(plusE(intE(2), intE(3)))
+       ~is 5
+/* 2 * 3 = 6 */
+check: interp(multE(intE(2), intE(3)))
+       ~is 6
+/* 1 + 2 * 3 = 7 */
+check: interp(plusE(intE(1), multE(intE(2), intE(3))))
+       ~is 7
+
+check: parse('1')
+       ~is intE(1)
+check: parse('2 + 3')
+       ~is plusE(intE(2), intE(3))
+check: parse('2 * 3')
+       ~is multE(intE(2), intE(3))
+check: parse('1 + 2 * 3')
+       ~is plusE(intE(1), multE(intE(2), intE(3)))
+trace parse:
+  check: parse('(1 + 2) * 3')
+         ~is multE(plusE(intE(1), intE(2)), intE(3))
+check: parse('1 2')
+       ~raises "invalid input"
