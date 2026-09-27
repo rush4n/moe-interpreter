@@ -1,0 +1,86 @@
+#lang shplait
+
+/* PART 1 */
+fun to_the_3rd(n :: Int) :: Int:
+  n * n * n
+
+check: to_the_3rd(3)
+       ~is 27
+check: to_the_3rd(-1)
+       ~is -1
+check: to_the_3rd(-2)
+       ~is -8
+check: to_the_3rd(0)
+       ~is 0
+check: to_the_3rd(17)
+       ~is 4913
+
+/* PART 2 */
+fun to_the_42nd(n :: Int) :: Int:
+  to_the_3rd(to_the_3rd(to_the_3rd(n))) * to_the_3rd(to_the_3rd(n)) * to_the_3rd(n) * to_the_3rd(n)
+
+check: to_the_42nd(17)
+       ~is 4773695331839566234818968439734627784374274207965089
+check: to_the_42nd(0)
+       ~is 0
+check: to_the_42nd(1)
+       ~is 1
+check: to_the_42nd(-1)
+       ~is 1
+
+/* PART 3 */
+fun plural(s :: String) :: String:
+  def len = string_length(s)
+  cond
+  | s == "": "s"
+  | string_get(s, len - 1) == Char "y":
+      string_append(substring(s, 0, len - 1), "ies")
+  | ~else: string_append(s, "s")
+
+check: plural("baby")
+       ~is "babies"
+check: plural("fish")
+       ~is "fishs"
+check: plural("")
+       ~is "s"
+check: plural("day")
+       ~is "daies"
+
+/* PART 4 */
+type Light
+| bulb(watts :: Int,
+       technology :: Symbol)
+| candle(inches :: Int)
+
+fun electricity_usage(source :: Light) :: Int:
+  match source
+  | bulb(w, t): w * 24
+  | candle(i): 0
+
+check: electricity_usage(bulb(100, #'halogen))
+       ~is 2400
+check: electricity_usage(bulb(150, #'halogen))
+       ~is 3600
+check: electricity_usage(candle(10))
+       ~is 0
+check: electricity_usage(candle(0))
+       ~is 0
+
+/* PART 5 */
+fun use_for_one_hour(source :: Light) :: Light:
+  match source
+  | bulb(w, t): bulb(w, t)
+  | candle(i): if i > 1
+               | candle(i - 1)
+               | candle(0)
+
+check: use_for_one_hour(bulb(100, #'halogen))
+       ~is bulb(100, #'halogen)
+check: use_for_one_hour(bulb(150, #'halogen))
+       ~is bulb(150, #'halogen)
+check: use_for_one_hour(candle(10))
+       ~is candle(9)
+check: use_for_one_hour(candle(0))
+       ~is candle(0)
+check: use_for_one_hour(candle(1))
+       ~is candle(0)

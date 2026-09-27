@@ -1,0 +1,107 @@
+#lang shplait
+
+def l = [1, 2, 3]
+
+#//
+fun print_list(l :: Listof(Int)):
+  match l
+  | []: #void
+  | cons(val, rst_lst): print(val +& "\n")
+                        print_list(rst_lst)
+
+#//
+fun double(x :: Int) :: Int:
+  x
+  
+#//
+map(double, l)
+
+type Datatype
+| intV(n :: Int)
+| stringV(s :: String)
+
+fun eat_cookie(n :: Int) :: Int:
+  if n > 0 | n - 1 | 0
+
+check: eat_cookie(0)
+       ~is 0
+check: eat_cookie(7)
+       ~is 6
+check: eat_cookie(-2)
+       ~is 0
+check: eat_cookie(100)
+       ~is 99
+
+type Posn
+| posn(x :: Int,
+       y :: Int)
+
+fun flip(p :: Posn) :: Posn:
+  match p
+  | posn(x, y): posn(y, x)
+
+check: flip(posn(0, 0))
+       ~is posn(0, 0)
+check: flip(posn(1, 2))
+       ~is posn(2, 1)
+check: flip(posn(-3, -4))
+       ~is posn(-4, -3)
+check: flip(posn(2, -2))
+       ~is posn(-2, 2)
+
+type Ant
+| ant(loc :: Posn,
+      weight :: Int)
+
+fun is_ant_home(a :: Ant) :: Boolean:
+  match a
+  | ant(l, w): if is_home(l)
+               | #true
+               | #false
+
+fun is_home(p :: Posn) :: Boolean:
+  match p
+  | posn(x, y): x == 0 && y == 0
+
+check: is_ant_home(ant(posn(0, 0), 1))
+       ~is #true
+check: is_ant_home(ant(posn(0, 3), 2))
+       ~is #false
+check: is_ant_home(ant(posn(-1, 2), 1))
+       ~is #false
+
+type Animal
+| tiger(color :: Symbol,
+        stripe_count :: Int)
+| snake(color :: Symbol,
+        weight :: Int,
+        food :: String)
+
+fun is_heavy_animal(a :: Animal) :: Boolean:
+  match a
+  | tiger(c, s_c): #true
+  | snake(c, w, f): w > 2
+
+def zoo :: Listof(Animal) = []
+
+check: is_heavy_animal(snake(#'green, 3, "rats"))
+       ~is #true
+check: is_heavy_animal(tiger(#'white, 150))
+       ~is #true
+check: is_heavy_animal(snake(#'green, 1, "rats"))
+       ~is #false
+
+fun feed_fish(aq :: Listof(Int)) :: Listof(Int):
+  match aq
+  | []: []
+  | cons(w, rst_lst): cons(w + 1, feed_fish(rst_lst))
+
+check: feed_fish(cons(1, cons(2, cons(3, cons(4, cons(5, []))))))
+       ~is cons(2, cons(3, cons(4, cons(5, cons(6, [])))))
+check: feed_fish([])
+       ~is []
+check: feed_fish([2, 7, 11])
+       ~is [3, 8, 12]
+
+
+
