@@ -8,11 +8,16 @@ type Exp
 | multE(l :: Exp,
         r :: Exp)
 | appE(s :: Symbol,
-       arg :: Exp)
+       /* PART 2 */
+       args :: Listof(Exp))
+/* PART 1 */
+| maxE(l :: Exp,
+       r :: Exp)
 
 type FunDef
 | fd(name :: Symbol,
-     arg :: Symbol,
+     /* PART 2 */
+     params :: Listof(Symbol),
      body :: Exp)
 
 fun parse(s :: Syntax) :: Exp:
@@ -22,8 +27,10 @@ fun parse(s :: Syntax) :: Exp:
   | ~else: match s
            | '$left + $right': plusE(parse(left), parse(right))
            | '$left * $right': multE(parse(left), parse(right))
-           | '$sym($arg)': appE(syntax_to_symbol(sym),
-                                parse(arg))
+           | 'max($left, $right)': maxE(parse(left), parse(right))
+           /* PART 2 */
+           | '$sym($arg, ...)': appE(syntax_to_symbol(sym),
+                                     map(parse, syntax_to_list('[$arg, ...]'))) 
            | '($e)': parse(e)
            | ~else: error(#'interp, "invalid input " +& s)
 
@@ -44,21 +51,21 @@ module test:
 
 fun parse_fundef(s :: Syntax) :: FunDef:
   match s
-  | 'fun $name($arg): $body': fd(syntax_to_symbol(name),
-                                 syntax_to_symbol(arg),
-                                 parse(body))
+  /* PART 2 */
+  | 'fun $name($arg, ...): $body': fd(syntax_to_symbol(name),
+                                      map(syntax_to_symbol, syntax_to_list('[$arg, ...]')),
+                                      parse(body))
   | ~else: error(#'parse, "invalid function definition " +& s)
            
 module test:
   check: parse_fundef('fun double(x): x + x')
-         ~is fd(#'double, #'x, plusE(idE(#'x), idE(#'x)))
+         ~is fd(#'double, [#'x], plusE(idE(#'x), idE(#'x)))
   check: parse_fundef('fun quadruple(x): double(double(x))')
-         ~is fd(#'quadruple, #'x, appE(#'double, appE(#'double, idE(#'x))))
+         ~is fd(#'quadruple, [#'x], appE(#'double, [appE(#'double, [idE(#'x)])]))
   check: parse_fundef('fun plus_two(x): x + 2')
-         ~is fd(#'plus_two, #'x, plusE(idE(#'x), intE(2)))
+         ~is fd(#'plus_two, [#'x], plusE(idE(#'x), intE(2)))
   check: parse_fundef('fun (x): x + 2')
          ~raises "invalid function definition"
-
 
 fun interp(a :: Exp, defs :: Listof(FunDef)) :: Int:
   match a
@@ -66,13 +73,15 @@ fun interp(a :: Exp, defs :: Listof(FunDef)) :: Int:
   | idE(s): error(#'interp, "free variable " +& s)
   | plusE(l, r): interp(l, defs) + interp(r, defs)
   | multE(l, r): interp(l, defs) * interp(r, defs)
-  | appE(fn, arg):
+  /* PART 2 */
+  | appE(fn, args):
       block:
-        def df = get_fundef(fn, defs)
-        interp(subst(intE(interp(arg, defs)),
-                     fd.arg(df),
-                     fd.body(df)),
-               defs)
+          def df = get_fundef(fn, defs)
+          interp_args(args,
+                      fd.params(df),
+                      fd.body(df),
+                      defs)
+  | maxE(l, r): maxV(interp(l, defs), interp(r, defs))
 
 module test:
   /* 2 */
@@ -105,9 +114,10 @@ module test:
          ~is 10
   check: interp(parse('abs(-2)'), [double_def, quadruple_def, plus_two_def])
          ~raises "undefined function"
+  
 
-fun get_fundef(s :: Symbol, fundefs :: Listof(FunDef)) :: FunDef:
-  match fundefs
+fun get_fundef(s :: Symbol, defs :: Listof(FunDef)) :: FunDef:
+  match defs
   | []: error(#'interp, "undefined function " +& s)
   | cons(df, rst_defs): if fd.name(df) == s
                         | df
@@ -121,7 +131,10 @@ fun subst(what :: Exp, for :: Symbol, in :: Exp) :: Exp:
             | in
   | plusE(l, r): plusE(subst(what, for, l), subst(what, for, r))
   | multE(l, r): multE(subst(what, for, l), subst(what, for, r))
-  | appE(s, arg): appE(s, subst(what, for, arg))
+  /* PART 2 */
+  | appE(s, args): appE(s, subst_args(what, for, args))
+  /* PART 1 */
+  | maxE(l, r): maxE(subst(what, for, l), subst(what, for, r))
 
 module test:
   check: subst(parse('8'), #'x, parse('9'))
@@ -140,4 +153,69 @@ module test:
          ~is parse('double(8 + 2)')
   check: subst(parse('8'), #'x, parse('double(double(x))'))
          ~is parse('double(double(8))')
+     
+/* PART 1 */
+module test:
+  check: subst(parse('4'), #'x, parse('max(x, x + y)'))
+         ~is parse('max(4, 4 + y)')
+  check: subst(parse('4'), #'x, parse('max(4 + 2, x + y)'))
+         ~is parse('max(4 + 2, 4 + y)')
+  check: interp(parse('max(2, 3)'), [])
+         ~is 3
+  check: interp(parse('max(double(2), 3)'), [double_def])
+         ~is 4
+  check: interp(parse('max(double(2), 3 * 2)'), [double_def])
+         ~is 6
+  check: interp(parse('max(double(2) + plus_two(3), 3 * 2)'), [double_def, plus_two_def])
+         ~is 9
 
+fun maxV(l :: Int, r :: Int) :: Int:
+  if l > r
+  | l
+  | r
+
+
+/* PART 2 */
+fun subst_args(what :: Exp, for :: Symbol, args :: Listof(Exp)) :: Listof(Exp):
+  match args
+  | []: []
+  | cons(arg, rst_args): cons(subst(what, for, arg), subst_args(what, for, rst_args))
+
+fun interp_args(args :: Listof(Exp), params :: Listof(Symbol), body :: Exp, defs :: Listof(FunDef)) :: Int:
+  match args
+  | []:
+      match params
+      | []: interp(body, defs)
+      | cons(param, rst_params): error(#'interp, "wrong arity")
+  | cons(arg, rst_args):
+      match params
+      | []: error(#'interp, "wrong arity")
+      | cons(param, rst_params):
+          interp_args(rst_args, rst_params, subst(intE(interp(arg, defs)),
+                                                  param,
+                                                  body),
+                      defs)
+
+module  test:
+  check: subst(parse('8'), #'x, parse('area(x, x)'))
+         ~is parse('area(8, 8)')
+  check: interp(parse('max(double(2, 3, 4) + plus_two(3), 3 * 2)'), [double_def, plus_two_def])
+         ~raises "wrong arity"
+  check: interp(parse('f(1, 2)'),
+                [parse_fundef('fun f(x, y): x + y')])
+         ~is 3
+  check: interp(parse('f() + f()'),
+                [parse_fundef('fun f(): 5')])
+         ~is 10
+  check: interp(parse('f(2, 3)'),
+                [parse_fundef('fun f(x, y): y + x + x')])
+         ~is 7
+  check: interp(parse('f(1)'),
+                [parse_fundef('fun f(x, y): x+y')])
+         ~raises "wrong arity"
+  check: interp(parse('f(x)'),
+                [parse_fundef('fun f(a): 1')])
+         ~raises "free variable"
+  check: interp(parse('f(x)'),
+                [parse_fundef('fun f(a): 1')])
+         ~raises "free variable"
