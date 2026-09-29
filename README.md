@@ -4,11 +4,11 @@ This repository tracks my CS6520 coursework [and beyond ;)]
 
 ## Homeworks
 
-- [Homework 001 — Functions and Datatypes](homeworks/001/README.md)
-- [Homework 002 — Structural Recursion](homeworks/002/README.md)
-- [Homework 003 — Extending a First-Order Language](homeworks/003/README.md)
+- [`homeworks/001/basics.rhm`](homeworks/001/basics.rhm): Typed functions, strings, algebraic datatypes, and pattern matching.
+- [`homeworks/002/basics_cntd.rhm`](homeworks/002/basics_cntd.rhm): Structural recursion over trees and lists, including an accumulator for path-dependent state.
+- [`homeworks/003/functions.rhm`](homeworks/003/functions.rhm): Extends the first-order function interpreter with `max`, zero-or-more arguments, call-by-value substitution, and arity checking.
 
 ## Interpreters
 
-- [Interpreter 001 — Arithmetic](interpreters/001/README.md)
-- [Interpreter 002 — First-Order Functions](interpreters/002/README.md)
+- [`interpreters/001/interpreter.rhm`](interpreters/001/interpreter.rhm): An arithmetic parser and interpreter built around an explicit AST.
+- [`interpreters/002/interpreter.rhm`](interpreters/002/interpreter.rhm): Adds identifiers and first-order functions using definition lookup and substitution.
