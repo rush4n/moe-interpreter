@@ -219,3 +219,5 @@ module  test:
   check: interp(parse('f(x)'),
                 [parse_fundef('fun f(a): 1')])
          ~raises "free variable"
+
+/* PART 3 UNDER CONSTRUCTION */
