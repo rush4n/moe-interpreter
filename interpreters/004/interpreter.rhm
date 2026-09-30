@@ -5,6 +5,21 @@ type Value
 | closV(arg :: Symbol,
         body :: Exp,
         env :: Env)
+| boxV(b :: Location)
+
+type Location = Int
+
+type Storage
+| cell(loc :: Location,
+       v :: Value)
+
+type Store = Listof(Storage)
+def mt_store = []
+def override_store = cons
+
+type Result
+| res(v :: Value,
+      store :: Store)
 
 type Exp
 | intE(n :: Int)
@@ -20,6 +35,12 @@ type Exp
        body :: Exp)
 | appE(fn :: Exp,
        arg :: Exp)
+| boxE(arg :: Exp)
+| unboxE(arg :: Exp)
+| setboxE(bx :: Exp,
+          val :: Exp)
+| beginE(l :: Exp,
+         r :: Exp)
 
 type Binding
 | bind(name :: Symbol,
@@ -42,6 +63,14 @@ fun parse(s :: Syntax) :: Exp:
            | '$left * $right': multE(parse(left), parse(right))
            | 'fun ($id): $body': funE(syntax_to_symbol(id),
                                       parse(body))
+           | 'box($val_arg)': boxE(parse(val_arg))
+           | 'unbox($bx_arg)': unboxE(parse(bx_arg))
+           | 'set_box($bx_arg, $val_arg)': setboxE(parse(bx_arg),
+                                                   parse(val_arg))
+           | 'begin:
+                $effect_exp
+                $result_exp': beginE(parse(effect_exp),
+                                     parse(result_exp))
            | '$fn($arg)': appE(parse(fn),
                                parse(arg))
            | '($e)': parse(e)
@@ -61,24 +90,64 @@ module test:
   check: parse('1 2')
          ~raises "invalid input"
 
-fun interp(a :: Exp, env :: Env) :: Value:
+fun interp(a :: Exp, env :: Env, sto :: Store) :: Result:
   match a
-  | intE(n): intV(n)
-  | idE(s): lookup(s, env)
-  | plusE(l, r): num_plus(interp(l, env), interp(r, env))
-  | multE(l, r): num_mult(interp(l, env), interp(r, env))
+  | intE(n): res(intV(n), sto)
+  | idE(s): res(lookup(s, env), sto)
+  | plusE(l, r): reslet (v_l, sto_l) = interp(l, env, sto):
+                   reslet (v_r, sto_r) = interp(r, env, sto_l):
+                     res(num_plus(v_l, v_r), sto_r)
+  | multE(l, r): reslet (v_l, sto_l) = interp(l, env, sto):
+                   reslet (v_r, sto_r) = interp(r, env, sto_l):
+                     res(num_plus(v_l, v_r), sto_r)
   | appE(fn, arg):
-      match interp(fn, env)
-      | closV(n, body, c_env): interp(body,
-                                      extend_env(bind(n, interp(arg, env)),
-                                                 c_env))
-      | ~else: error(#'interp, "not a function")
-  | funE(n, body): closV(n, body, env)
-  | letE(s, rhs, body): interp(body,
-                               extend_env(bind(s, interp(rhs,
-                                                         env)),
-                                          env))
-                        
+      reslet (v_fn, sto_fn) = interp(fn, env, sto):
+        match v_fn
+        | closV(n, body, c_env):
+            reslet(v_arg, sto_arg) = interp(arg, env, sto_fn):
+              interp(body,
+                     extend_env(bind(n, v_arg),
+                                c_env),
+                     sto_arg)
+        | ~else: error(#'interp, "not a function")
+  | funE(n, body): res(closV(n, body, env), sto)
+  | letE(s, rhs, body):
+      reslet (v_rhs, sto_rhs) = interp(rhs, env, sto):
+        interp(body,
+               extend_env(bind(s, v_rhs),
+                          env),
+               sto_rhs)
+  | boxE(a):
+      match interp(a, env, sto)
+      | res(v, sto_v):
+          block:
+            def l = new_loc(sto_v)
+            res(boxV(l),
+                override_store(cell(l, v),
+                               sto_v))
+  | unboxE(a):
+      match interp(a, env, sto)
+      | res(v, sto_v):
+          match v
+          | boxV(l):
+              res(fetch(l, sto),
+                  sto_v)
+          | ~else: error(#'interp, "not a box")
+  | setboxE(bx, val):
+      match interp(bx, env, sto)
+      | res(v_b, sto_b):
+          match interp(val, env, sto_b)
+          | res(v_v, sto_v):
+              match v_b
+              | boxV(l):
+                  res(v_v, override_store(cell(l, v_v),
+                                          sto_v))
+              | ~else: error(#'interp, "not a box")
+  | beginE(l, r):
+      match interp(l, env, sto)
+      | res(v_l, sto_l):
+          interp(r, env, sto_l)
+                                         
 fun num_op(l :: Value, r :: Value, op) :: Value:
   cond
   | l is_a intV && r is_a intV:
@@ -91,6 +160,7 @@ fun num_plus(l :: Value, r :: Value) :: Value:
 fun num_mult(l :: Value, r :: Value) :: Value:
   num_op(l, r, fun (l, r): l * r)
 
+#//
 module test:
   check: interp(parse('2'), mt_env)
          ~is intV(2)
@@ -169,3 +239,25 @@ module test:
                            extend_env(bind(#'y, intV(20)),
                                       extend_env(bind(#'y, intV(30)), mt_env))))
          ~raises "free variable"
+
+fun new_loc(sto :: Store) :: Location:
+  1 + max_address(sto)
+
+fun max_address(sto :: Store) :: Location:
+  match sto
+  | []: 0
+  | cons(c, rst_sto): max(cell.loc(c),
+                          max_address(rst_sto))
+
+fun fetch(l :: Location, sto :: Store) :: Value:
+  match sto
+  | []: error(#'interp, "undefined cell")
+  | cons(c, rst_sto): if l == cell.loc(c)
+                      | cell.v(c)
+                      | fetch(l, rst_sto)
+
+macro 'reslet ($v_id, $sto_id) = $call:
+         $body':
+  'match $call
+   | res($v_id, $sto_id):
+       $body'
