@@ -1,0 +1,194 @@
+#lang shplait
+
+type Exp
+| intE(n :: Int)
+| idE(s :: Symbol)
+| plusE(l :: Exp,
+        r :: Exp)
+| multE(l :: Exp,
+        r :: Exp)
+| appE(s :: Symbol,
+       arg :: Exp)
+| letE(s :: Symbol,
+       rhs :: Exp,
+       body :: Exp)
+
+type Binding
+| bind(name :: Symbol,
+       val :: Int)
+
+type Env = Listof(Binding)
+def mt_env = []
+def extend_env = cons 
+
+type FunDef
+| fd(name :: Symbol,
+     param :: Symbol,
+     body :: Exp)
+
+fun parse(s :: Syntax) :: Exp:
+  cond
+  | syntax_is_integer(s): intE(syntax_to_integer(s))
+  | syntax_is_symbol(s): idE(syntax_to_symbol(s))
+  | ~else: match s
+           | 'let $s = $rhs:
+                $body': letE(syntax_to_symbol(s),
+                             parse(rhs),
+                             parse(body))
+           | '$left + $right': plusE(parse(left), parse(right))
+           | '$left * $right': multE(parse(left), parse(right))
+           | '$sym($arg)': appE(syntax_to_symbol(sym),
+                                parse(arg))
+           | '($e)': parse(e)
+           | ~else: error(#'interp, "invalid input " +& s)
+
+module test:
+  check: parse('1')
+         ~is intE(1)
+  check: parse('2 + 3')
+         ~is plusE(intE(2), intE(3))
+  check: parse('2 * 3')
+         ~is multE(intE(2), intE(3))
+  check: parse('1 + 2 * 3')
+         ~is plusE(intE(1), multE(intE(2), intE(3)))
+  check: parse('(1 + 2) * 3')
+         ~is multE(plusE(intE(1), intE(2)), intE(3))
+  check: parse('1 2')
+         ~raises "invalid input"
+
+
+fun parse_fundef(s :: Syntax) :: FunDef:
+  match s
+  | 'fun $name($arg): $body': fd(syntax_to_symbol(name),
+                                 syntax_to_symbol(arg),
+                                 parse(body))
+  | ~else: error(#'parse, "invalid function definition " +& s)
+           
+module test:
+  check: parse_fundef('fun double(x): x + x')
+         ~is fd(#'double, #'x, plusE(idE(#'x), idE(#'x)))
+  check: parse_fundef('fun quadruple(x): double(double(x))')
+         ~is fd(#'quadruple, #'x, appE(#'double, appE(#'double, idE(#'x))))
+  check: parse_fundef('fun plus_two(x): x + 2')
+         ~is fd(#'plus_two, #'x, plusE(idE(#'x), intE(2)))
+  check: parse_fundef('fun (x): x + 2')
+         ~raises "invalid function definition"
+
+
+fun interp(a :: Exp, env :: Env, defs :: Listof(FunDef)) :: Int:
+  match a
+  | intE(n): n
+  | idE(s): lookup(s, env)
+  | plusE(l, r): interp(l, env, defs) + interp(r, env, defs)
+  | multE(l, r): interp(l, env, defs) * interp(r, env, defs)
+  | appE(fn, arg):
+      def d = get_fundef(fn, defs)
+      interp(fd.body(d),
+             extend_env(bind(fd.param(d), interp(arg,
+                                                 env,
+                                                 defs)),
+                        mt_env),
+             defs)
+  | letE(s, rhs, body): interp(body,
+                               extend_env(bind(s, interp(rhs,
+                                                         env,
+                                                         defs)),
+                                          env),
+                               defs)
+
+module test:
+  /* 2 */
+  check: interp(intE(2), mt_env, [])
+         ~is 2
+  /* #'x */
+  check: interp(parse('x'), mt_env, [])
+         ~raises "free variable"
+  /* 2 + 3 = 5 */
+  check: interp(plusE(intE(2), intE(3)), mt_env, [])
+         ~is 5
+  /* 2 * 3 = 6 */
+  check: interp(multE(intE(2), intE(3)), mt_env, [])
+         ~is 6
+  /* 1 + 2 * 3 = 7 */
+  check: interp(plusE(intE(1), multE(intE(2), intE(3))), mt_env, [])
+         ~is 7
+
+  def double_def = parse_fundef('fun double(x): x + x')
+  def quadruple_def = parse_fundef('fun quadruple(x): double(double(x))')
+  def plus_two_def = parse_fundef('fun plus_two(x): x + 2')
+
+
+  check: interp(parse('double(4)'), mt_env, [double_def, quadruple_def, plus_two_def])
+         ~is 8
+  check: interp(parse('double(4 + 2)'), mt_env, [double_def, quadruple_def, plus_two_def])
+         ~is 12
+  check: interp(parse('quadruple(2)'), mt_env, [double_def, quadruple_def, plus_two_def])
+         ~is 8
+  check: interp(parse('plus_two(double(2) * 2)'), mt_env, [double_def, quadruple_def, plus_two_def])
+         ~is 10
+  check: interp(parse('abs(-2)'), mt_env, [double_def, quadruple_def, plus_two_def])
+         ~raises "undefined function"
+  check: interp(parse('let y = 10:
+                         add_xy(10)'),
+                mt_env,
+                [parse_fundef('fun add_xy(x): x + y')])
+         ~raises "free variable"
+  check: interp(parse('let x = 1:
+                         x'), mt_env, [])
+         ~is 1
+  check: interp(parse('let x = 1:
+                         let x = 2:
+                           x'), mt_env, [])
+         ~is 2
+  check: interp(parse('let x = 1:
+                         let x = 2:
+                           double(x)'), mt_env, [double_def])
+         ~is 4
+  check: interp(parse('let x = 1:
+                         let x = 2:
+                           double(y)'), mt_env, [double_def])
+         ~raises "free variable"
+  check: interp(parse('let x = 1:
+                         let y = x + 2:
+                           double(x)'), mt_env, [double_def])
+         ~is 2
+  check: interp(parse('let x = 1:
+                         let y = x + 2:
+                           double(y)'), mt_env, [double_def])
+         ~is 6
+
+fun get_fundef(s :: Symbol, defs :: Listof(FunDef)) :: FunDef:
+  match defs
+  | []: error(#'interp, "undefined function " +& s)
+  | cons(df, rst_defs): if fd.name(df) == s
+                        | df
+                        | get_fundef(s, rst_defs)
+
+fun lookup(s :: Symbol, env :: Env):
+  match env
+  | []: error(#'interp, "free variable " +& s)
+  | cons(b, rst_b): if s == bind.name(b)
+                    | bind.val(b)
+                    | lookup(s, rst_b)
+
+module test:
+  check: lookup(#'x,
+                extend_env(bind(#'y, 10),
+                           extend_env(bind(#'x, 20),
+                                      extend_env(bind(#'x, 30), mt_env))))
+         ~is 20
+  check: lookup(#'x,
+                extend_env(bind(#'x, 10),
+                           extend_env(bind(#'y, 20),
+                                      extend_env(bind(#'y, 30), mt_env))))
+         ~is 10
+  check: lookup(#'y,
+                extend_env(bind(#'x, 10),
+                           extend_env(bind(#'y, 20),
+                                      extend_env(bind(#'y, 30), mt_env))))
+         ~is 20
+  check: lookup(#'x,
+                extend_env(bind(#'y, 10),
+                           extend_env(bind(#'y, 20),
+                                      extend_env(bind(#'y, 30), mt_env))))
+         ~raises "free variable"
