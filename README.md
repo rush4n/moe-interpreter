@@ -12,3 +12,5 @@ This repository tracks my CS6520 coursework [and beyond ;)]
 
 - [`interpreters/001/interpreter.rhm`](interpreters/001/interpreter.rhm): An arithmetic parser and interpreter built around an explicit AST.
 - [`interpreters/002/interpreter.rhm`](interpreters/002/interpreter.rhm): Adds identifiers and first-order functions using definition lookup and substitution.
+- [`interpreters/003/interpreter.rhm`](interpreters/003/interpreter.rhm): Replaces substitution for local variables with an explicit environment and adds lexically scoped `let` bindings.
+- [`interpreters/004/interpreter.rhm`](interpreters/004/interpreter.rhm): Adds closures, boxes, sequencing, and an explicit store that threads state through evaluation.
