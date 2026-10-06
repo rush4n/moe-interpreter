@@ -1,5 +1,13 @@
 #lang shplait
 
+type Value
+| intV(n :: Int)
+| closV(arg :: Symbol,
+        body :: Exp,
+        env :: Env)
+| recV(ns :: Listof(Symbol),
+       vs :: Listof(Value))
+
 type Exp
 | intE(n :: Int)
 | idE(s :: Symbol)
@@ -7,40 +15,50 @@ type Exp
         r :: Exp)
 | multE(l :: Exp,
         r :: Exp)
-| appE(s :: Symbol,
-       arg :: Exp)
 | letE(s :: Symbol,
        rhs :: Exp,
        body :: Exp)
+| funE(n :: Symbol,
+       body :: Exp)
+| appE(fn :: Exp,
+       arg :: Exp)
+| recordE(ns :: Listof(Symbol),
+          args :: Listof(Exp))
+| getE(rec :: Exp,
+       n :: Symbol)
+| setE(rec :: Exp,
+       n :: Symbol,
+       val :: Exp)
 
 type Binding
 | bind(name :: Symbol,
-       val :: Int)
+       val :: Value)
 
 type Env = Listof(Binding)
 def mt_env = []
 def extend_env = cons 
-
-type FunDef
-| fd(name :: Symbol,
-     param :: Symbol,
-     body :: Exp)
 
 fun parse(s :: Syntax) :: Exp:
   cond
   | syntax_is_integer(s): intE(syntax_to_integer(s))
   | syntax_is_symbol(s): idE(syntax_to_symbol(s))
   | ~else: match s
+           | '{ $field: $expr, ... }': recordE(map(syntax_to_symbol, syntax_to_list('[$field, ...]')),
+                                               map(parse, syntax_to_list('[$expr, ...]')))
+           | '$exp with ($name = $field_exp)': setE(parse(exp), syntax_to_symbol(name), parse(field_exp))
            | 'let $s = $rhs:
                 $body': letE(syntax_to_symbol(s),
                              parse(rhs),
                              parse(body))
            | '$left + $right': plusE(parse(left), parse(right))
            | '$left * $right': multE(parse(left), parse(right))
-           | '$sym($arg)': appE(syntax_to_symbol(sym),
-                                parse(arg))
+           | '$exp . $name': getE(parse(exp), syntax_to_symbol(name))
+           | 'fun ($id): $body': funE(syntax_to_symbol(id),
+                                      parse(body))
+           | '$fn($arg)': appE(parse(fn),
+                               parse(arg))
            | '($e)': parse(e)
-           | ~else: error(#'interp, "invalid input " +& s)
+           | ~else: error(#'parse, "invalid input " +& s)
 
 module test:
   check: parse('1')
@@ -56,113 +74,130 @@ module test:
   check: parse('1 2')
          ~raises "invalid input"
 
-
-fun parse_fundef(s :: Syntax) :: FunDef:
-  match s
-  | 'fun $name($arg): $body': fd(syntax_to_symbol(name),
-                                 syntax_to_symbol(arg),
-                                 parse(body))
-  | ~else: error(#'parse, "invalid function definition " +& s)
-           
-module test:
-  check: parse_fundef('fun double(x): x + x')
-         ~is fd(#'double, #'x, plusE(idE(#'x), idE(#'x)))
-  check: parse_fundef('fun quadruple(x): double(double(x))')
-         ~is fd(#'quadruple, #'x, appE(#'double, appE(#'double, idE(#'x))))
-  check: parse_fundef('fun plus_two(x): x + 2')
-         ~is fd(#'plus_two, #'x, plusE(idE(#'x), intE(2)))
-  check: parse_fundef('fun (x): x + 2')
-         ~raises "invalid function definition"
-
-
-fun interp(a :: Exp, env :: Env, defs :: Listof(FunDef)) :: Int:
+fun interp(a :: Exp, env :: Env) :: Value:
   match a
-  | intE(n): n
+  | intE(n): intV(n)
   | idE(s): lookup(s, env)
-  | plusE(l, r): interp(l, env, defs) + interp(r, env, defs)
-  | multE(l, r): interp(l, env, defs) * interp(r, env, defs)
+  | plusE(l, r): num_plus(interp(l, env), interp(r, env))
+  | multE(l, r): num_mult(interp(l, env), interp(r, env))
   | appE(fn, arg):
-      def d = get_fundef(fn, defs)
-      interp(fd.body(d),
-             extend_env(bind(fd.param(d), interp(arg,
-                                                 env,
-                                                 defs)),
-                        mt_env),
-             defs)
+      match interp(fn, env)
+      | closV(n, body, c_env):
+          interp(body,
+                 extend_env(bind(n, interp(arg, env)),
+                            c_env))
+      | ~else: error(#'interp, "not a function")
+  | funE(n, body): closV(n, body, env)
   | letE(s, rhs, body): interp(body,
-                               extend_env(bind(s, interp(rhs,
-                                                         env,
-                                                         defs)),
-                                          env),
-                               defs)
+                               extend_env(bind(s, interp(rhs, env)),
+                                          env))
+  | recordE(ns, vs): recV(ns,
+                          map(fun (v): interp(v, env), vs))
+  | getE(r, n):
+      match interp(r, env)
+      | recV(ns, vs): find(n, ns, vs)
+      | ~else: error(#'interp, "not a record")
+  | setE(r, n, v):
+      match interp(r, env)
+      | recV(ns, vs): recV(ns,
+                           update(n,
+                                  interp(v, env),
+                                  ns,
+                                  vs))
+      | ~else: error(#'interp, "not a record")
+                                         
+fun num_op(l :: Value, r :: Value, op) :: Value:
+  cond
+  | l is_a intV && r is_a intV:
+      intV(op(intV.n(l), intV.n(r)))
+  | ~else: error(#'interp, "not a number")
+  
+fun num_plus(l :: Value, r :: Value) :: Value:
+  num_op(l, r, fun (l, r): l + r)
+           
+fun num_mult(l :: Value, r :: Value) :: Value:
+  num_op(l, r, fun (l, r): l * r)
+
 
 module test:
-  /* 2 */
-  check: interp(intE(2), mt_env, [])
-         ~is 2
-  /* #'x */
-  check: interp(parse('x'), mt_env, [])
+  check: interp(parse('2'), mt_env)
+         ~is intV(2)
+  check: interp(parse('2 + 3'), mt_env)
+         ~is intV(5)
+  check: interp(parse('2 * 3'), mt_env)
+         ~is intV(6)
+  check: interp(parse('1 + 2 * 3'), mt_env)
+         ~is intV(7)
+  check: interp(parse('let x = 2 * 3:
+                          x * 2'), mt_env)
+         ~is intV(12)
+  check: interp(parse('let x = 2 * 3:
+                          x * 2'), mt_env)
+         ~is intV(12)
+  check: interp(parse('let x = 2 * 3:
+                          y * 2'), mt_env)
          ~raises "free variable"
-  /* 2 + 3 = 5 */
-  check: interp(plusE(intE(2), intE(3)), mt_env, [])
-         ~is 5
-  /* 2 * 3 = 6 */
-  check: interp(multE(intE(2), intE(3)), mt_env, [])
-         ~is 6
-  /* 1 + 2 * 3 = 7 */
-  check: interp(plusE(intE(1), multE(intE(2), intE(3))), mt_env, [])
-         ~is 7
-
-  def double_def = parse_fundef('fun double(x): x + x')
-  def quadruple_def = parse_fundef('fun quadruple(x): double(double(x))')
-  def plus_two_def = parse_fundef('fun plus_two(x): x + 2')
-
-
-  check: interp(parse('double(4)'), mt_env, [double_def, quadruple_def, plus_two_def])
-         ~is 8
-  check: interp(parse('double(4 + 2)'), mt_env, [double_def, quadruple_def, plus_two_def])
-         ~is 12
-  check: interp(parse('quadruple(2)'), mt_env, [double_def, quadruple_def, plus_two_def])
-         ~is 8
-  check: interp(parse('plus_two(double(2) * 2)'), mt_env, [double_def, quadruple_def, plus_two_def])
-         ~is 10
-  check: interp(parse('abs(-2)'), mt_env, [double_def, quadruple_def, plus_two_def])
-         ~raises "undefined function"
+  check: interp(parse('let x = 2 * 3:
+                          let x = x * 2:
+                            x + 2'), mt_env)
+         ~is intV(14)
   check: interp(parse('let y = 10:
-                         add_xy(10)'),
-                mt_env,
-                [parse_fundef('fun add_xy(x): x + y')])
-         ~raises "free variable"
+                         fun (x): y + x'), mt_env)
+         ~is closV(#'x, parse('y + x'),
+                   extend_env(bind(#'y, intV(10)),
+                              mt_env))
+ 
+  check: interp(parse('let f = (fun (x): x + 2):
+                           f(2)'),
+                mt_env)
+         ~is intV(4)
+  check: interp(parse('let y = 10:
+                           let f = (fun (x): y + x):
+                             f(y)'), mt_env)
+         ~is intV(20)
+  check: interp(parse('let x = 10:
+                         x + (fun (x): x + 2)'), mt_env)
+         ~raises "not a number"
+  check: interp(parse('let x = 10:
+                         x(10)'), mt_env)
+         ~raises "not a function"
   check: interp(parse('let x = 1:
-                         x'), mt_env, [])
-         ~is 1
-  check: interp(parse('let x = 1:
-                         let x = 2:
-                           x'), mt_env, [])
-         ~is 2
-  check: interp(parse('let x = 1:
-                         let x = 2:
-                           double(x)'), mt_env, [double_def])
-         ~is 4
-  check: interp(parse('let x = 1:
-                         let x = 2:
-                           double(y)'), mt_env, [double_def])
-         ~raises "free variable"
-  check: interp(parse('let x = 1:
-                         let y = x + 2:
-                           double(x)'), mt_env, [double_def])
-         ~is 2
-  check: interp(parse('let x = 1:
-                         let y = x + 2:
-                           double(y)'), mt_env, [double_def])
-         ~is 6
-
-fun get_fundef(s :: Symbol, defs :: Listof(FunDef)) :: FunDef:
-  match defs
-  | []: error(#'interp, "undefined function " +& s)
-  | cons(df, rst_defs): if fd.name(df) == s
-                        | df
-                        | get_fundef(s, rst_defs)
+                         let f = (fun (y): x + y):
+                           let x = 100:
+                             f(2)'),
+                mt_env)
+         ~is intV(3)
+  check: interp(parse('let r = { x: 1, y: 1 + 1 }:
+                         r.x'), mt_env)
+         ~is intV(1)
+  check: interp(parse('let r = { x: 1, y: 1 + 1 }:
+                         r.x + r.y'), mt_env)
+         ~is intV(3)
+  check: interp(parse('let r = (fun (v): { x: v + 1, y: v + 2 }):
+                         r(2)'), mt_env)
+         ~is recV([#'x, #'y], [intV(3), intV(4)])
+  check: interp(parse('let r = (fun (v): { x: v + 1, y: v + 2 }):
+                         r(2).x'), mt_env)
+         ~is intV(3)
+  check: interp(parse('let r1 = {x : 1, y : 2}:
+                         let r2 = r1 with (x = 5):
+                           r1.x + r2.x'), mt_env)
+         ~is intV(6)
+  check: interp(parse('let r1 = {x : 1, y : 2}:
+                         let r2 = r1 with (z = 3):
+                           r1.z'), mt_env)
+         ~raises "no such field"
+  check: interp(parse('let r1 = {x : 1, y : 2}:
+                         let r2 = r1 with (y = 3):
+                           r1.z'), mt_env)
+         ~raises "no such field"
+  check: interp(parse('let r1 = (fun (x): x):
+                         r1.x'), mt_env)
+         ~raises "not a record"
+  check: interp(parse('let r1 = (fun (x): x):
+                         let r2 = r1 with (x = 7):
+                           r2.x'), mt_env)
+         ~raises "not a record"
 
 fun lookup(s :: Symbol, env :: Env):
   match env
@@ -173,22 +208,36 @@ fun lookup(s :: Symbol, env :: Env):
 
 module test:
   check: lookup(#'x,
-                extend_env(bind(#'y, 10),
-                           extend_env(bind(#'x, 20),
-                                      extend_env(bind(#'x, 30), mt_env))))
-         ~is 20
+                extend_env(bind(#'y, intV(10)),
+                           extend_env(bind(#'x, intV(20)),
+                                      extend_env(bind(#'x, intV(30)), mt_env))))
+         ~is intV(20)
   check: lookup(#'x,
-                extend_env(bind(#'x, 10),
-                           extend_env(bind(#'y, 20),
-                                      extend_env(bind(#'y, 30), mt_env))))
-         ~is 10
+                extend_env(bind(#'x, intV(10)),
+                           extend_env(bind(#'y, intV(20)),
+                                      extend_env(bind(#'y, intV(30)), mt_env))))
+         ~is intV(10)
   check: lookup(#'y,
-                extend_env(bind(#'x, 10),
-                           extend_env(bind(#'y, 20),
-                                      extend_env(bind(#'y, 30), mt_env))))
-         ~is 20
+                extend_env(bind(#'x, intV(10)),
+                           extend_env(bind(#'y, intV(20)),
+                                      extend_env(bind(#'y, intV(30)), mt_env))))
+         ~is intV(20)
   check: lookup(#'x,
-                extend_env(bind(#'y, 10),
-                           extend_env(bind(#'y, 20),
-                                      extend_env(bind(#'y, 30), mt_env))))
+                extend_env(bind(#'y, intV(10)),
+                           extend_env(bind(#'y, intV(20)),
+                                      extend_env(bind(#'y, intV(30)), mt_env))))
          ~raises "free variable"
+
+fun find(n :: Symbol, ns :: Listof(Symbol), vs :: Listof(Value)) :: Value:
+  match ns
+  | []: error(#'interp, "no such field " +& n)
+  | cons(ns_n, rst_ns): if ns_n == n
+                        | first(vs)
+                        | find(n, rst_ns, rest(vs))
+
+fun update(n :: Symbol, v :: Value, ns :: Listof(Symbol), vs :: Listof(Value)) :: Listof(Value):
+  match ns
+  | []: error(#'interp, "no such field " +& n)
+  | cons(ns_n, rst_ns): if ns_n == n
+                        | cons(v, rest(vs))
+                        | cons(first(vs), update(n, v, rst_ns, rest(vs))) 
