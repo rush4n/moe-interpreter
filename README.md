@@ -14,10 +14,5 @@ This repository tracks my CS6520 coursework [and beyond ;)]
 - [`interpreters/002/interpreter.rhm`](interpreters/002/interpreter.rhm): Adds identifiers and first-order functions using definition lookup and substitution.
 - [`interpreters/003/interpreter.rhm`](interpreters/003/interpreter.rhm): Replaces substitution for local variables with an explicit environment and adds lexically scoped `let` bindings.
 - [`interpreters/004/interpreter.rhm`](interpreters/004/interpreter.rhm): Adds closures, boxes, sequencing, and an explicit store that threads state through evaluation.
-- [`interpreters/005/interpreter.rhm`](interpreters/005/interpreter.rhm): Adds immutable records, field lookup, and functional update that returns a new record while preserving the original.
-- [`interpreters/006/interpreter.rhm`](interpreters/006/interpreter.rhm): Makes record fields mutable by storing them in boxes, so field assignment updates the existing record.
-
-## Takeaway
-
-- Imperative update = mutable datatype
-- Functional update = persistent datatype
+- [`interpreters/005/interpreter.rhm`](interpreters/005/interpreter.rhm): Adds immutable records and field lookup. Functional update produces a new record, making the datatype persistent.
+- [`interpreters/006/interpreter.rhm`](interpreters/006/interpreter.rhm): Stores record fields in boxes so assignment updates the existing record. Imperative update makes the datatype mutable.
