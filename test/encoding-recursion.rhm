@@ -1,0 +1,39 @@
+#lang shplait
+~untyped
+
+#//
+fun len(l :: Listof(Int)) :: Int:
+  if is_empty(l)
+  | 0
+  | 1 + len(rest(l))
+
+fun is_empty(l :: Listof(Int)) :: Boolean:
+  l == []
+
+letrec len = (fun (l):
+                if is_empty(l)
+                | 0
+                | 1 + len(rest(l))):
+  len([1, 2, 3])
+
+let len = (fun (len, l):
+             if is_empty(l)
+             | 0
+             | 1 + len(len, rest(l))):
+  len(len, [1, 2, 3])
+
+let len = (fun (len):
+             fun (l):
+               if is_empty(l)
+               | 0
+               | 1 + len(len)(rest(l))):
+  len(len)([1, 2, 3])
+
+let len = (fun (len):
+             fun (l):
+               if is_empty(l)
+               | 0
+               | 1 + len(len)(rest(l))):
+  let lenX = len(len):
+    lenX([1, 2, 3])
+

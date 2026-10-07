@@ -1,0 +1,278 @@
+#lang shplait
+
+type Value
+| intV(n :: Int)
+| closV(arg :: Symbol,
+        body :: Exp,
+        env :: Env)
+| boxV(b :: Location)
+
+type Location = Int
+
+type Storage
+| cell(loc :: Location,
+       v :: Value)
+
+type Store = Listof(Storage)
+def mt_store = []
+def override_store = cons
+
+type Result
+| res(v :: Value,
+      store :: Store)
+
+type Exp
+| intE(n :: Int)
+| idE(s :: Symbol)
+| plusE(l :: Exp,
+        r :: Exp)
+| multE(l :: Exp,
+        r :: Exp)
+| letE(s :: Symbol,
+       rhs :: Exp,
+       body :: Exp)
+| funE(n :: Symbol,
+       body :: Exp)
+| appE(fn :: Exp,
+       arg :: Exp)
+| boxE(arg :: Exp)
+| unboxE(arg :: Exp)
+| setboxE(bx :: Exp,
+          val :: Exp)
+| beginE(l :: Exp,
+         r :: Exp)
+| setE(var :: Symbol,
+       val :: Exp)
+
+type Binding
+| bind(name :: Symbol,
+       loc :: Location)
+
+type Env = Listof(Binding)
+def mt_env = []
+def extend_env = cons 
+
+fun parse(s :: Syntax) :: Exp:
+  cond
+  | syntax_is_integer(s): intE(syntax_to_integer(s))
+  | syntax_is_symbol(s): idE(syntax_to_symbol(s))
+  | ~else: match s
+           | 'let $s = $rhs:
+                $body': letE(syntax_to_symbol(s),
+                             parse(rhs),
+                             parse(body))
+           | '$name := $val_exp': setE(syntax_to_symbol(name), parse(val_exp))
+           | '$left + $right': plusE(parse(left), parse(right))
+           | '$left * $right': multE(parse(left), parse(right))
+           | 'fun ($id): $body': funE(syntax_to_symbol(id),
+                                      parse(body))
+           | 'box($val_arg)': boxE(parse(val_arg))
+           | 'unbox($bx_arg)': unboxE(parse(bx_arg))
+           | 'set_box($bx_arg, $val_arg)': setboxE(parse(bx_arg),
+                                                   parse(val_arg))
+           | 'begin:
+                $effect_exp
+                $result_exp': beginE(parse(effect_exp),
+                                     parse(result_exp))
+           | '$fn($arg)': appE(parse(fn),
+                               parse(arg))
+           | '($e)': parse(e)
+           | ~else: error(#'parse, "invalid input " +& s)
+
+module test:
+  check: parse('1')
+         ~is intE(1)
+  check: parse('2 + 3')
+         ~is plusE(intE(2), intE(3))
+  check: parse('2 * 3')
+         ~is multE(intE(2), intE(3))
+  check: parse('1 + 2 * 3')
+         ~is plusE(intE(1), multE(intE(2), intE(3)))
+  check: parse('(1 + 2) * 3')
+         ~is multE(plusE(intE(1), intE(2)), intE(3))
+  check: parse('1 2')
+         ~raises "invalid input"
+
+fun interp(a :: Exp, env :: Env, sto :: Store) :: Result:
+  match a
+  | intE(n): res(intV(n), sto)
+  | idE(s): res(fetch(lookup(s, env), sto),
+                sto)
+  | plusE(l, r): reslet (v_l, sto_l) = interp(l, env, sto):
+                   reslet (v_r, sto_r) = interp(r, env, sto_l):
+                     res(num_plus(v_l, v_r), sto_r)
+  | multE(l, r): reslet (v_l, sto_l) = interp(l, env, sto):
+                   reslet (v_r, sto_r) = interp(r, env, sto_l):
+                     res(num_plus(v_l, v_r), sto_r)
+  | appE(fn, arg):
+      reslet (v_fn, sto_fn) = interp(fn, env, sto):
+        reslet(v_arg, sto_arg) = interp(arg, env, sto_fn):
+          match v_fn
+          | closV(n, body, c_env):
+              let l = new_loc(sto_arg):
+                interp(body,
+                       extend_env(bind(n, l),
+                                  c_env),
+                       override_store(cell(l, v_arg),
+                                      sto_arg))
+          | ~else: error(#'interp, "not a function")
+  | funE(n, body): res(closV(n, body, env), sto)
+  | letE(s, rhs, body):
+      reslet (v_rhs, sto_rhs) = interp(rhs, env, sto):
+        let l = new_loc(sto_rhs):
+          interp(body,
+                 extend_env(bind(s, l),
+                            env),
+                 override_store(cell(l, v_rhs),
+                                sto_rhs))
+  | boxE(a):
+      match interp(a, env, sto)
+      | res(v, sto_v):
+          block:
+            def l = new_loc(sto_v)
+            res(boxV(l),
+                override_store(cell(l, v),
+                               sto_v))
+  | unboxE(a):
+      match interp(a, env, sto)
+      | res(v, sto_v):
+          match v
+          | boxV(l):
+              res(fetch(l, sto),
+                  sto_v)
+          | ~else: error(#'interp, "not a box")
+  | setboxE(bx, val):
+      match interp(bx, env, sto)
+      | res(v_b, sto_b):
+          match interp(val, env, sto_b)
+          | res(v_v, sto_v):
+              match v_b
+              | boxV(l):
+                  res(v_v, override_store(cell(l, v_v),
+                                          sto_v))
+              | ~else: error(#'interp, "not a box")
+  | beginE(l, r):
+      match interp(l, env, sto)
+      | res(v_l, sto_l):
+          interp(r, env, sto_l)
+  | setE(var, val):
+      let l = lookup(var, env):
+        reslet (v_v, sto_v) = interp(val, env, sto):
+          res(v_v,
+              override_store(cell(l, v_v),
+                             sto_v))
+                                         
+fun num_op(l :: Value, r :: Value, op) :: Value:
+  cond
+  | l is_a intV && r is_a intV:
+      intV(op(intV.n(l), intV.n(r)))
+  | ~else: error(#'interp, "not a number")
+  
+fun num_plus(l :: Value, r :: Value) :: Value:
+  num_op(l, r, fun (l, r): l + r)
+           
+fun num_mult(l :: Value, r :: Value) :: Value:
+  num_op(l, r, fun (l, r): l * r)
+
+#//
+module test:
+  check: interp(parse('2'), mt_env)
+         ~is intV(2)
+  check: interp(parse('2 + 3'), mt_env)
+         ~is intV(5)
+  check: interp(parse('2 * 3'), mt_env)
+         ~is intV(6)
+  check: interp(parse('1 + 2 * 3'), mt_env)
+         ~is intV(7)
+  check: interp(parse('let x = 2 * 3:
+                          x * 2'), mt_env)
+         ~is intV(12)
+  check: interp(parse('let x = 2 * 3:
+                          x * 2'), mt_env)
+         ~is intV(12)
+  check: interp(parse('let x = 2 * 3:
+                          y * 2'), mt_env)
+         ~raises "free variable"
+  check: interp(parse('let x = 2 * 3:
+                          let x = x * 2:
+                            x + 2'), mt_env)
+         ~is intV(14)
+  check: interp(parse('let y = 10:
+                         fun (x): y + x'), mt_env)
+         ~is closV(#'x, parse('y + x'),
+                   extend_env(bind(#'y, intV(10)),
+                              mt_env))
+ 
+  check: interp(parse('let f = (fun (x): x + 2):
+                           f(2)'),
+                mt_env)
+         ~is intV(4)
+  check: interp(parse('let y = 10:
+                           let f = (fun (x): y + x):
+                             f(y)'), mt_env)
+         ~is intV(20)
+  check: interp(parse('let x = 10:
+                         x + (fun (x): x + 2)'), mt_env)
+         ~raises "not a number"
+  check: interp(parse('let x = 10:
+                         x(10)'), mt_env)
+         ~raises "not a function"
+  check: interp(parse('let x = 1:
+                         let f = (fun (y): x + y):
+                           let x = 100:
+                             f(2)'),
+                mt_env)
+         ~is intV(3)
+  
+
+fun lookup(s :: Symbol, env :: Env):
+  match env
+  | []: error(#'interp, "free variable " +& s)
+  | cons(b, rst_b): if s == bind.name(b)
+                    | bind.loc(b)
+                    | lookup(s, rst_b)
+
+#//
+module test:
+  check: lookup(#'x,
+                extend_env(bind(#'y, intV(10)),
+                           extend_env(bind(#'x, intV(20)),
+                                      extend_env(bind(#'x, intV(30)), mt_env))))
+         ~is intV(20)
+  check: lookup(#'x,
+                extend_env(bind(#'x, intV(10)),
+                           extend_env(bind(#'y, intV(20)),
+                                      extend_env(bind(#'y, intV(30)), mt_env))))
+         ~is intV(10)
+  check: lookup(#'y,
+                extend_env(bind(#'x, intV(10)),
+                           extend_env(bind(#'y, intV(20)),
+                                      extend_env(bind(#'y, intV(30)), mt_env))))
+         ~is intV(20)
+  check: lookup(#'x,
+                extend_env(bind(#'y, intV(10)),
+                           extend_env(bind(#'y, intV(20)),
+                                      extend_env(bind(#'y, intV(30)), mt_env))))
+         ~raises "free variable"
+
+fun new_loc(sto :: Store) :: Location:
+  1 + max_address(sto)
+
+fun max_address(sto :: Store) :: Location:
+  match sto
+  | []: 0
+  | cons(c, rst_sto): max(cell.loc(c),
+                          max_address(rst_sto))
+
+fun fetch(l :: Location, sto :: Store) :: Value:
+  match sto
+  | []: error(#'interp, "undefined cell")
+  | cons(c, rst_sto): if l == cell.loc(c)
+                      | cell.v(c)
+                      | fetch(l, rst_sto)
+
+macro 'reslet ($v_id, $sto_id) = $call:
+         $body':
+  'match $call
+   | res($v_id, $sto_id):
+       $body'
