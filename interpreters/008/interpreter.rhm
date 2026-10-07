@@ -5,8 +5,6 @@ type Value
 | closV(arg :: Symbol,
         body :: Exp,
         env :: Env)
-| recV(ns :: Listof(Symbol),
-       vs :: Listof(Value))
 
 type Exp
 | intE(n :: Int)
