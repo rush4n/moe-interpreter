@@ -16,3 +16,5 @@ This repository tracks my CS6520 coursework [and beyond ;)]
 - [`interpreters/004/interpreter.rhm`](interpreters/004/interpreter.rhm): Adds closures, boxes, sequencing, and an explicit store that threads state through evaluation.
 - [`interpreters/005/interpreter.rhm`](interpreters/005/interpreter.rhm): Adds immutable records and field lookup. Functional update produces a new record, making the datatype persistent.
 - [`interpreters/006/interpreter.rhm`](interpreters/006/interpreter.rhm): Stores record fields in boxes so assignment updates the existing record. Imperative update makes the datatype mutable.
+- [`interpreters/007/interpreter.rhm`](interpreters/007/interpreter.rhm): Adds assignable variables by mapping names to store locations instead of directly to values.
+- [`interpreters/008/interpreter.rhm`](interpreters/008/interpreter.rhm): Encodes `let`, booleans, and conditionals using only functions and application, with thunks preserving conditional evaluation under call-by-value.
