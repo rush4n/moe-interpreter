@@ -1,0 +1,38 @@
+#lang shplait
+~lazy
+
+/* Infinite list evaluated lazily */
+fun numbers_from(i :: Int) :: Listof(Int):
+  cons(i, numbers_from(i + 1))
+
+fun lazy_get(lon :: Listof(Int), i :: Int) :: Int:
+  if i == 0
+  | first(lon)
+  | lazy_get(rest(lon), i - 1)
+
+fun alternates(lon :: Listof(Int)) :: Listof(Int):
+  cons(first(lon), alternates(rest(rest(lon))))
+  
+def five_and_up = numbers_from(5)
+
+lazy_get(five_and_up, 13)
+lazy_get(alternates(five_and_up), 13)
+
+/* Lazily evaluating shplait functions */
+fun f(x):
+  x + 1
+
+f(3 + 4)
+
+fun g(x):
+  4
+
+g(1 / 0)
+
+/* State */
+fun fx(b):
+  begin:
+    set_box(b, 2) // why? because never used
+    unbox(b)
+
+fx(box(1))
