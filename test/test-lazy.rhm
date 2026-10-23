@@ -1,0 +1,8 @@
+#lang shplait
+~lazy
+~untyped
+
+/* InClass: Mon Oct 19 2026 */
+1 + 2
+
+(fun (x): 12)(1(2))

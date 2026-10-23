@@ -5,6 +5,7 @@ type Value
 | closV(arg :: Symbol,
         body :: Exp,
         env :: Env)
+| boxV(th :: Thunk)
 
 type Thunk
 | delay(arg :: Exp,
@@ -22,6 +23,8 @@ type Exp
        body :: Exp)
 | appE(fn :: Exp,
        arg :: Exp)
+| boxE(arg :: Exp)
+| unboxE(bx :: Exp)
 
 type Binding
 | bind(name :: Symbol,
@@ -55,6 +58,8 @@ fun parse(s :: Syntax) :: Exp:
       | 'fun ($id): $body':
           funE(syntax_to_symbol(id),
                parse(body))
+      | 'box($e)': boxE(parse(e))
+      | 'unbox($e)': unboxE(parse(e))
       | '$fn($arg)':
           appE(parse(fn),
                parse(arg))
@@ -108,8 +113,18 @@ fun interp(a :: Exp, env :: Env) :: Value:
                  extend_env(bind(n, delay(arg, env, box(none()))),
                             c_env))
       | ~else: error(#'interp, "not a function")
+  | boxE(a): boxV(delay(a, env, box(none())))
+  | unboxE(bx):
+      match interp(bx, env)
+      | boxV(th): force(th)
+      | ~else: error(#'interp, "not a box")
+      
 
 module test:
+  check: interp(parse('box(1 + 1)'), mt_env)
+         ~is boxV(delay(parse('1 + 1'), mt_env, box(none())))
+  check: interp(parse('unbox(box(1 + 1))'), mt_env)
+         ~is intV(2)
   check: interp(parse('2'), mt_env)
          ~is intV(2)
   check: interp(parse('x'), mt_env)

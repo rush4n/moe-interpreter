@@ -15,6 +15,11 @@ fun alternates(lon :: Listof(Int)) :: Listof(Int):
   
 def five_and_up = numbers_from(5)
 
+#//
+list_get(five_and_up, 13)
+#//
+list_get(alternates(five_and_up), 13)
+
 lazy_get(five_and_up, 13)
 lazy_get(alternates(five_and_up), 13)
 
