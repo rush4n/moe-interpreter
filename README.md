@@ -7,6 +7,8 @@ This repository tracks my CS6520 coursework [and beyond ;)]
 - [`homeworks/001/basics.rhm`](homeworks/001/basics.rhm): Typed functions, strings, algebraic datatypes, and pattern matching.
 - [`homeworks/002/basics_cntd.rhm`](homeworks/002/basics_cntd.rhm): Structural recursion over trees and lists, including an accumulator for path-dependent state.
 - [`homeworks/003/functions.rhm`](homeworks/003/functions.rhm): Extends the first-order function interpreter with `max`, zero-or-more arguments, call-by-value substitution, and arity checking.
+- [`homeworks/006/lambda.rhm`](homeworks/006/lambda.rhm): Encodes `let` and `letrec` with functions, using a fixed-point construction to support recursion and define arithmetic operations.
+- [`homeworks/007/lazy.rhm`](homeworks/007/lazy.rhm): Implements call-by-need with memoized thunks, including lazy pairs, recursive functions, and finite access to infinite structures.
 
 ## Interpreters
 
