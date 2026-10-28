@@ -1,0 +1,391 @@
+#lang shplait
+
+// Convert `interp`- and `continue`-time structures
+// to explicit allocation via `malloc`, where a tag
+// on each allocated record indicates the variant.
+
+type Exp
+| intE(n :: Int)
+| idE(s :: Symbol)
+| plusE(l :: Exp,
+        r :: Exp)
+| multE(l :: Exp,
+        r :: Exp)
+| funE(n :: Symbol,
+       body :: Exp)
+| appE(fn :: Exp,
+       arg :: Exp)
+| if0E(tst :: Exp,
+       thn :: Exp,
+       els :: Exp)
+/*
+    type ExpD
+ 8  | intD(n :: Int)
+ 9  | atD(n :: Int)
+ 10 | plusD(l :: ExpD,
+            r :: ExpD)
+ 11 | multD(l :: ExpD,
+            r :: ExpD)
+ 12 | funD(body :: ExpD)
+ 13 | appD(fn :: ExpD,
+           arg :: ExpD)
+ 14 | if0D(tst :: ExpD,
+           thn :: ExpD,
+           els :: ExpD)
+*/
+
+/*
+    type Value
+ 15 | intV(n :: Int)
+ 16 | closV(body :: ExpD,
+            env :: Env)
+*/
+
+type BindingC
+| bindC(name :: Symbol)
+
+type EnvC = Listof(BindingC)
+
+def mt_env = []
+def extend_env = cons
+
+/*
+    type Cont
+ 0  | doneK()
+ 1  | plusSecondK(r :: ExpD,
+                  env :: Env,
+                  k :: Cont)
+ 2  | doPlusK(v1 :: Value,
+              k :: Cont)
+ 3  | multSecondK(r :: ExpD,
+                  env :: Env,
+                  k :: Cont)
+ 4  | doMultK(v1 :: Value,
+              k :: Cont)
+ 5  | appArgK(arg :: ExpD,
+              env :: Env,
+              k :: Cont)
+ 6  | doAppK(fun_val :: Value,
+             k :: Cont)
+ 7  | doIf0K(thn :: ExpD,
+             els :: ExpD,
+             env :: Env,
+             k :: Cont)
+*/
+
+/* 
+ 17 cons for env
+*/
+
+// ----------------------------------------
+// Allocation
+
+def memory = make_array(1500, 0)
+def mutable ptr_reg = 0
+
+fun incptr(n):
+  ptr_reg := ptr_reg + n
+  ptr_reg - n
+
+fun malloc1(tag, a):
+  memory[ptr_reg] := tag
+  memory[ptr_reg + 1] := a
+  incptr(2)
+
+fun malloc2(tag, a, b):
+  memory[ptr_reg] := tag
+  memory[ptr_reg + 1] := a
+  memory[ptr_reg + 2] := b
+  incptr(3)
+
+fun malloc3(tag, a, b, c):
+  memory[ptr_reg] := tag
+  memory[ptr_reg + 1] := a
+  memory[ptr_reg + 2] := b
+  memory[ptr_reg + 3] := c
+  incptr(4)
+
+fun malloc4(tag, a, b, c, d):
+  memory[ptr_reg] := tag
+  memory[ptr_reg + 1] := a
+  memory[ptr_reg + 2] := b
+  memory[ptr_reg + 3] := c
+  memory[ptr_reg + 4] := d
+  incptr(5)
+
+fun ref(n, d):
+  memory[n+d]
+
+// parse ----------------------------------------
+fun parse(s :: Syntax) :: Exp:
+  cond
+  | syntax_is_integer(s):
+      intE(syntax_to_integer(s))
+  | syntax_is_symbol(s):
+      idE(syntax_to_symbol(s))
+  | ~else:
+      match s
+      | 'if $tst == 0 | $thn | $els':
+          if0E(parse(tst), parse(thn), parse(els))
+      | 'let $name = $rhs: $body':
+          appE(funE(syntax_to_symbol(name), parse(body)),
+               parse(rhs))               
+      | '$left + $right': plusE(parse(left), parse(right))
+      | '$left * $right': multE(parse(left), parse(right))
+      | 'fun ($id): $body': funE(syntax_to_symbol(id),
+                                 parse(body))
+      | '$fn($arg)': appE(parse(fn), parse(arg))
+      | '($e)': parse(e)
+      | ~else: error(#'parse, "invalid input: " +& s)
+
+module test:
+  check: parse('2')
+         ~is intE(2)
+  check: parse('x')
+         ~is idE(#'x)
+  check: parse('2 + 1')
+         ~is plusE(intE(2), intE (1))
+  check: parse('3 * 4')
+         ~is multE(intE(3), intE(4))
+  check: parse('3 * 4 + 8')
+         ~is plusE(multE(intE(3), intE(4)), intE(8))
+  check: parse('fun (x): 9')
+         ~is funE(#'x, intE(9))
+  check: parse('double(9)')
+         ~is appE(idE(#'double), intE(9))
+  check: parse('1 + double(9)')
+         ~is plusE(intE(1), appE(idE(#'double), intE(9)))
+  check: parse('3 * (4 + 8)')
+         ~is multE(intE(3), plusE(intE(4), intE(8)))
+  check: parse('let x = 1 + 2: y')
+         ~is appE(funE(#'x, idE(#'y)), plusE(intE(1), intE(2)))
+  check: parse('if 1 == 0 | 2 | 3')
+         ~is if0E(intE(1), intE(2), intE(3))
+  check: parse('1 2')
+         ~raises "invalid input"
+
+// ----------------------------------------
+
+fun compile(a, env):
+  match a
+  | intE(n): malloc1(8, n)
+  | idE(name): malloc1(9, locate(name, env))
+  | plusE(l, r): malloc2(10, compile(l, env), compile(r, env))
+  | multE(l, r): malloc2(11, compile(l, env), compile(r, env))
+  | funE(n, body_expr): malloc1(12,
+                                compile(body_expr,
+                                        extend_env(bindC(n), env)))
+  | appE(fn, arg): malloc2(13,
+                           compile(fn, env),
+                           compile(arg, env))
+  | if0E(tst, thn, els): malloc3(14,
+                                 compile(tst, env),
+                                 compile(thn, env),
+                                 compile(els, env))
+
+fun locate(name, env):
+  match env
+  | []: error(#'locate, "free variable: " +& name)
+  | cons(fst_b, rst_env): if name == bindC.name(fst_b)
+                          | 0
+                          | 1 + locate(name, rst_env)
+
+// ----------------------------------------
+
+def mutable exp_reg = 0
+def mutable env_reg = 0
+
+// interp :: (ExpD, Env, Cont) -> Value
+fun interp():
+  match ref(exp_reg, 0)
+  | 8: // intD
+      v_reg := malloc1(15, ref(exp_reg, 1))
+      continue()
+  | 9: // atD
+      env2_reg := env_reg
+      n_reg := ref(exp_reg, 1)
+      env_ref()
+  | 10: // plusD
+      k_reg := malloc3(1, ref(exp_reg, 2), env_reg, k_reg)
+      exp_reg := ref(exp_reg, 1)
+      interp()
+  | 11: // multD
+      k_reg := malloc3(3, ref(exp_reg, 2), env_reg, k_reg)
+      exp_reg := ref(exp_reg, 1)
+      interp()
+  | 12: // funD
+      v_reg := malloc2(16, ref(exp_reg, 1), env_reg)
+      continue()
+  | 13: // appD
+      k_reg := malloc3(5, ref(exp_reg, 2), env_reg, k_reg)
+      exp_reg := ref(exp_reg, 1)
+      interp()
+  | 14: // if0D
+      k_reg := malloc4(7, ref(exp_reg, 2), ref(exp_reg, 3), env_reg, k_reg)
+      exp_reg := ref(exp_reg, 1)
+      interp()
+  | ~else:
+      error(#'interp, "bad expression " +& ref(exp_reg, 0))
+
+def mutable k_reg = 0
+def mutable v_reg = 0
+
+// continue :: (Cont, Value) -> Value
+fun continue():
+  match ref(k_reg, 0)
+  | 0: //
+      v_reg
+  | 1: // plusSecondK
+      exp_reg := ref(k_reg, 1)
+      env_reg := ref(k_reg, 2)
+      k_reg := malloc2(2, v_reg, ref(k_reg, 3))
+      interp()
+  | 2: // doPlusK
+      v_reg := num_plus(ref(k_reg, 1), v_reg)
+      k_reg := ref(k_reg, 2)
+      continue()
+  | 3: // multSecondK
+      exp_reg := ref(k_reg, 1)
+      env_reg := ref(k_reg, 2)
+      k_reg := malloc2(4, v_reg, ref(k_reg, 3))
+      interp()
+  | 4: // doMultK
+      v_reg := num_mult(ref(k_reg, 1), v_reg)
+      k_reg := ref(k_reg, 2)
+      continue()
+  | 5: // appArgK
+      exp_reg := ref(k_reg, 1)
+      env_reg := ref(k_reg, 2)
+      k_reg := malloc2(6, v_reg, ref(k_reg, 3))
+      interp()
+  | 6: // doAppK
+      exp_reg := ref(ref(k_reg, 1), 1)
+      env_reg := malloc2(17, v_reg, ref(ref(k_reg, 1), 2))
+      k_reg := ref(k_reg, 2)
+      interp()
+  | 7: // doIf0K
+      if num_is_zero(v_reg)
+      | exp_reg := ref(k_reg, 1)
+      | exp_reg := ref(k_reg, 2)
+      env_reg := ref(k_reg, 3)
+      k_reg := ref(k_reg, 4)
+      interp()
+  | ~else:
+      error(#'continue, "bad continuation " +& ref(k_reg, 0))
+
+fun num_op(op :: (Int, Int) -> Int):
+  fun (l, r):
+    malloc1(15, op(ref(l, 1), ref(r, 1)))
+def num_plus = num_op(fun (a, b): a+b)
+def num_mult = num_op(fun (a, b): a*b)
+
+fun num_is_zero(v):
+  ref(v, 1) == 0
+
+def mutable env2_reg = 0
+def mutable n_reg = 0
+
+fun env_ref():
+  if n_reg == 0
+  | v_reg := ref(env2_reg, 1)
+    continue()
+  | env2_reg := ref(env2_reg, 2)
+    n_reg := n_reg - 1
+    env_ref()
+
+// ----------------------------------------
+
+fun init_k(): malloc1(0, 0)
+
+fun interpx(a, env, k):
+  exp_reg := a
+  env_reg := env
+  k_reg := k
+  interp()
+
+def empty_env = malloc1(0, 0)
+
+macro 'N $check: $expr
+                 ~is $n':
+  '$check: ref($expr, 1)
+           ~is $n'
+
+module test:
+  N check: interpx(compile(parse('2'), mt_env),
+                   empty_env,
+                   init_k())
+           ~is 2
+  check: compile(parse('x'), mt_env)
+         ~raises "free variable"
+  N check: interpx(compile(parse('2 + 1'), mt_env),
+                   empty_env,
+                   init_k())
+           ~is 3
+  N check: interpx(compile(parse('2 * 1'), mt_env),
+                   empty_env,
+                   init_k())
+           ~is 2
+  N check: interpx(compile(parse('(2 * 3) + (5 + 8)'), mt_env),
+                   empty_env,
+                   init_k())
+           ~is 19
+  N check: interpx(compile(parse('(fun (x): x + x)(17)'),
+                           mt_env),
+                   empty_env,
+                   init_k())
+           ~is 34
+  N check: interpx(compile(parse('let x = 5: x + x'),
+                           mt_env),
+                   empty_env,
+                   init_k())
+           ~is 10
+  N check: interpx(compile(parse('let x = 5:
+                                    let y = 6:
+                                      x'),
+                           mt_env),
+                   empty_env,
+                   init_k())
+           ~is 5
+  N check: interpx(compile(parse('(fun (x): x + x)(8)'),
+                           mt_env),
+                   empty_env,
+                   init_k())
+           ~is 16
+  N check: interpx(compile(parse('if 0 == 0 | 1 | 2'),
+                           mt_env),
+                   empty_env,
+                   init_k())
+           ~is 1
+  N check: interpx(compile(parse('if 1 == 0 | 1 | 2'),
+                           mt_env),
+                   empty_env,
+                   init_k())
+           ~is 2
+  N check: interpx(compile(
+                     parse(
+                       'let mkrec = (fun (body_proc):
+                                       (fun (fX):
+                                          fX(fX))(fun (fX):
+                                                    body_proc(fun (x):
+                                                                fX(fX)(x)))):
+                          let fib = mkrec(fun (fib):
+                                            fun (n):
+                                              if n == 0:
+                                              | 1
+                                              | if (n + -1) == 0
+                                                | 1
+                                                | fib(n + -1) + fib(n + -2)):
+                            fib(4)'
+                     ),
+                     mt_env),
+                   empty_env,
+                   init_k())
+           ~is 5
+
+  // coverage for error cases:
+  check: interpx(empty_env, empty_env, init_k())
+         ~raises "bad expression"    
+  check: block:
+           def exp = compile(parse('1'), mt_env)
+           interpx(exp, empty_env, exp)
+         ~raises "bad continuation"
